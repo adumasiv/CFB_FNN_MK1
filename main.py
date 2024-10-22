@@ -24,7 +24,6 @@ team_stats_list = []
 for year in years:
     for team in teams:
         try:
-            # Get team games for the year using the correct method
             response = games_api.get_games(year=year, team=team, season_type='regular')
             games = response  # Adjust based on the actual response structure
 
@@ -52,8 +51,6 @@ for year in years:
                     'week': game.week
                 }
 
-                # If additional statistics are needed, fetch them here
-
                 team_stats_list.append(stats_dict)
         except Exception as e:
             print(f"Error fetching data for {team} in {year}: {e}")
@@ -74,7 +71,6 @@ missing_columns = [col for col in required_columns if col not in df.columns]
 if missing_columns:
     print(f"Missing columns: {missing_columns}")
     # Handle missing columns as needed
-    # For example, you can add them with default values
     for col in missing_columns:
         df[col] = 0  # or any other default value
 
@@ -90,7 +86,6 @@ X_train, X_test, y_train, y_test = train_test_split(
     normalized_features.values, targets.values, test_size=0.2, random_state=42
 )
 
-# Neural Network Implementation
 # Initialize weights and biases
 input_neurons = X_train.shape[1]
 hidden_neurons_1 = 10
