@@ -1,9 +1,21 @@
+# ----------------------- Imports -----------------------
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+
+# For data fetching (ensure cfbd is installed and configured properly)
 from cfbd import Configuration, ApiClient, TeamsApi, GamesApi, StatsApi
+
+# For model building
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+
+# For preprocessing
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # ----------------------- Data Fetching and Preprocessing -----------------------
 
@@ -18,13 +30,12 @@ games_api = GamesApi(api_client)
 stats_api = StatsApi(api_client)
 
 # Teams and years of interest
-teams = ["Michigan", "Michigan State", "Ohio State",
-         "Penn State", "Maryland", "Indiana", "Rutgers",
-         "Northwestern", "UCLA", "Iowa", "Minnesota", "USC",
-         "Nebraska", "Purdue", "Washington", "Oregon", "Wisconsin",
-         "Illinois"
-         ]
-years = [2024, 2023, 2022, 2021, 2020, 2019]
+teams = [
+    "Michigan", "Michigan State", "Ohio State", "Penn State", "Maryland",
+    "Indiana", "Rutgers", "Northwestern", "UCLA", "Iowa", "Minnesota", "USC",
+    "Nebraska", "Purdue", "Washington", "Oregon", "Wisconsin", "Illinois"
+]
+years = [2024, 2023, 2022, 2021, 2020, 2019]  # Adjust years as needed
 
 # Fetch seasonal statistics for each team
 team_season_stats_list = []
@@ -56,7 +67,9 @@ for year in years:
                 'fumblesLost': stats_dict.get('fumblesLost', 0),
                 'interceptions': stats_dict.get('interceptions', 0),
                 'fumblesRecovered': stats_dict.get('fumblesRecovered', 0),
-                'passesIntercepted': stats_dict.get('passesIntercepted', 0)
+                'passesIntercepted': stats_dict.get('passesIntercepted', 0),
+                'pointsPerGame': stats_dict.get('pointsPerGame', 0),
+                'yardsPerGame': stats_dict.get('yardsPerGame', 0)
             }
 
             team_season_stats_list.append(season_stats_dict)
@@ -84,10 +97,12 @@ for year in years:
                     opponent = game.away_team
                     points_for = game.home_points
                     points_against = game.away_points
+                    is_home = 1
                 else:
                     opponent = game.home_team
                     points_for = game.away_points
                     points_against = game.home_points
+                    is_home = 0
 
                 game_stats_dict = {
                     'team': team,
@@ -95,7 +110,8 @@ for year in years:
                     'points_for': points_for,
                     'points_against': points_against,
                     'year': year,
-                    'week': game.week
+                    'week': game.week,
+                    'is_home': is_home
                 }
                 team_game_stats_list.append(game_stats_dict)
         except Exception as e:
@@ -115,148 +131,123 @@ targets = df_combined[['points_for', 'points_against']]
 
 # Define feature columns
 feature_columns = [
-    'team', 'opponent', 'year', 'week', 'passCompPercent', 'passingTDs', 'rushingTDs',
-    'penaltyYards', 'fumblesLost', 'interceptions', 'fumblesRecovered', 'passesIntercepted'
+    'team', 'opponent', 'year', 'week', 'is_home', 'passCompPercent', 'passingTDs', 'rushingTDs',
+    'penaltyYards', 'fumblesLost', 'interceptions', 'fumblesRecovered', 'passesIntercepted',
+    'pointsPerGame', 'yardsPerGame'
 ]
 features = df_combined[feature_columns]
-
-# Retain 'team' and 'opponent' names for output
-team_opponent = df_combined[['team', 'opponent']]
 
 # One-hot encode categorical features
 features_encoded = pd.get_dummies(features, columns=['team', 'opponent'], drop_first=True)
 
-# Standardize features
+# Standardize numerical features
+numerical_features = [
+    'year', 'week', 'passCompPercent', 'passingTDs', 'rushingTDs', 'penaltyYards',
+    'fumblesLost', 'interceptions', 'fumblesRecovered', 'passesIntercepted',
+    'pointsPerGame', 'yardsPerGame'
+]
 scaler_features = StandardScaler()
-standardized_features = scaler_features.fit_transform(features_encoded)
-
-# Scale target variables from 0 to 1
-scaler_targets = MinMaxScaler()
-scaled_targets = scaler_targets.fit_transform(targets)
+features_encoded[numerical_features] = scaler_features.fit_transform(features_encoded[numerical_features])
 
 # Split data into training and testing sets
-X_train, X_test, y_train, y_test, team_train, team_test = train_test_split(
-    standardized_features, scaled_targets, team_opponent, test_size=0.2, random_state=42
+X_train, X_test, y_train, y_test = train_test_split(
+    features_encoded, targets, test_size=0.2, random_state=42
 )
-
 
 # ----------------------- Neural Network Training -----------------------
 
-# Initialize neural network weights and biases
-def xavier_init(size_in, size_out):
-    limit = np.sqrt(6 / (size_in + size_out))
-    return np.random.uniform(-limit, limit, (size_in, size_out))
+# Convert targets to numpy arrays
+y_train = y_train.values
+y_test = y_test.values
 
+# Define the model
+model = Sequential([
+    Dense(128, activation='relu', input_shape=(X_train.shape[1],)),
+    Dense(64, activation='relu'),
+    Dense(32, activation='relu'),
+    Dense(2)  # Output layer for regression
+])
 
-input_neurons = X_train.shape[1]
-hidden_neurons_1 = 10
-hidden_neurons_2 = 5
-output_neurons = 2
-learning_rate = 0.01
-epochs = 10000
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
 
-np.random.seed(0)
-weights_input_hidden1 = xavier_init(input_neurons, hidden_neurons_1)
-weights_hidden1_hidden2 = xavier_init(hidden_neurons_1, hidden_neurons_2)
-weights_hidden2_output = xavier_init(hidden_neurons_2, output_neurons)
-
-
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-
-def sigmoid_derivative(x):
-    return x * (1 - x)
-
-
-# Training loop
-for epoch in range(epochs):
-    # Forward propagation
-    hidden_layer1_input = np.dot(X_train, weights_input_hidden1)
-    hidden_layer1_output = sigmoid(hidden_layer1_input)
-
-    hidden_layer2_input = np.dot(hidden_layer1_output, weights_hidden1_hidden2)
-    hidden_layer2_output = sigmoid(hidden_layer2_input)
-
-    predicted_output = np.dot(hidden_layer2_output, weights_hidden2_output)
-
-    # Compute error
-    error = np.mean((y_train - predicted_output) ** 2)
-
-    # Backpropagation
-    output_error = y_train - predicted_output
-    output_delta = output_error  # Linear activation derivative is 1
-
-    hidden_layer2_error = np.dot(output_delta, weights_hidden2_output.T)
-    hidden_layer2_delta = hidden_layer2_error * sigmoid_derivative(hidden_layer2_output)
-
-    hidden_layer1_error = np.dot(hidden_layer2_delta, weights_hidden1_hidden2.T)
-    hidden_layer1_delta = hidden_layer1_error * sigmoid_derivative(hidden_layer1_output)
-
-    # Update weights
-    weights_hidden2_output += np.dot(hidden_layer2_output.T, output_delta) * learning_rate
-    weights_hidden1_hidden2 += np.dot(hidden_layer1_output.T, hidden_layer2_delta) * learning_rate
-    weights_input_hidden1 += np.dot(X_train.T, hidden_layer1_delta) * learning_rate
-
-    # Print error every 1000 epochs
-    if epoch % 1000 == 0:
-        print(f"Epoch {epoch}, Error: {error}")
+# Train the model
+history = model.fit(
+    X_train, y_train,
+    validation_split=0.1,
+    epochs=100,
+    batch_size=32,
+    verbose=1
+)
 
 # ----------------------- Model Evaluation -----------------------
 
-# Testing
-hidden_layer1_input_test = np.dot(X_test, weights_input_hidden1)
-hidden_layer1_output_test = sigmoid(hidden_layer1_input_test)
+# Evaluate the model on the test set
+test_loss, test_mae = model.evaluate(X_test, y_test)
+print(f"\nTest MAE: {test_mae}")
 
-hidden_layer2_input_test = np.dot(hidden_layer1_output_test, weights_hidden1_hidden2)
-hidden_layer2_output_test = sigmoid(hidden_layer2_input_test)
+# Make predictions
+predictions = model.predict(X_test)
 
-predicted_output_test = np.dot(hidden_layer2_output_test, weights_hidden2_output)
+# Calculate additional metrics
+mse = mean_squared_error(y_test, predictions)
+mae = mean_absolute_error(y_test, predictions)
+r2 = r2_score(y_test, predictions)
 
-predicted_output_unscaled = scaler_targets.inverse_transform(predicted_output_test)
-y_test_unscaled = scaler_targets.inverse_transform(y_test)
+print(f"Test MSE: {mse}")
+print(f"Test MAE: {mae}")
+print(f"R² Score: {r2}")
 
-test_error = mean_squared_error(y_test_unscaled, predicted_output_unscaled)
-print(f"\nTest MSE: {test_error}\n")
+# Plot training & validation loss values
+#plt.figure(figsize=(12, 4))
 
-print("Predictions vs Actual:")
-print("Team vs Opponent | Team Predicted | Opponent Predicted | Team Actual | Opponent Actual")
-print("-" * 80)
-for i in range(min(len(y_test_unscaled), 10)):
-    team = team_test.iloc[i]['team']
-    opponent = team_test.iloc[i]['opponent']
-    pred_for = predicted_output_unscaled[i][0]
-    pred_against = predicted_output_unscaled[i][1]
-    actual_for = y_test_unscaled[i][0]
-    actual_against = y_test_unscaled[i][1]
-    print(f"{team} vs {opponent} | {pred_for:.2f} | {pred_against:.2f} | {actual_for} | {actual_against}")
+# Loss
+#plt.subplot(1, 2, 1)
+#plt.plot(history.history['loss'], label='Train')
+#plt.plot(history.history['val_loss'], label='Validation')
+#plt.title('Model Loss')
+#plt.xlabel('Epoch')
+#plt.ylabel('Loss (MSE)')
+#plt.legend()
 
+# MAE
+#plt.subplot(1, 2, 2)
+#plt.plot(history.history['mae'], label='Train')
+#plt.plot(history.history['val_mae'], label='Validation')
+#plt.title('Model MAE')
+#plt.xlabel('Epoch')
+#plt.ylabel('MAE')
+#plt.legend()
+
+#plt.show()
+
+# ----------------------- Predictions vs Actual -----------------------
+
+# Creates a DataFrame to compare predictions and actual values
+comparison_df = pd.DataFrame({
+    'Team': X_test.filter(regex='^team_').idxmax(axis=1).str.replace('team_', ''),
+    'Opponent': X_test.filter(regex='^opponent_').idxmax(axis=1).str.replace('opponent_', ''),
+    'Predicted Points For': predictions[:, 0],
+    'Predicted Points Against': predictions[:, 1],
+    'Actual Points For': y_test[:, 0],
+    'Actual Points Against': y_test[:, 1]
+})
+
+print("\nPredictions vs Actual:")
+print(comparison_df.head(10))
 
 # ----------------------- Projection Functionality -----------------------
 
-def project_game(home_team, away_team, year, week, scaler_features, weights_input_hidden1, weights_hidden1_hidden2,
-                 weights_hidden2_output, scaler_targets, features_encoded, df_season_stats):
-
+def project_game(home_team, away_team, year, week, scaler_features, model, features_encoded, df_season_stats):
     # Retrieve home team stats for the given year
     team_stats = df_season_stats[(df_season_stats['team'] == home_team) & (df_season_stats['year'] == year)]
     if team_stats.empty:
         print(f"No stats found for team {home_team} in year {year}. Using zeros for stats.")
-        stats = {
-            'passCompPercent': 0,
-            'passingTDs': 0,
-            'rushingTDs': 0,
-            'penaltyYards': 0,
-            'fumblesLost': 0,
-            'interceptions': 0,
-            'fumblesRecovered': 0,
-            'passesIntercepted': 0
-        }
+        stats = {key: 0 for key in numerical_features}
     else:
         stats = team_stats.iloc[0].to_dict()
         # Extract only the required stats
-        stats = {k: stats[k] for k in ['passCompPercent', 'passingTDs', 'rushingTDs',
-                                       'penaltyYards', 'fumblesLost', 'interceptions',
-                                       'fumblesRecovered', 'passesIntercepted']}
+        stats = {k: stats[k] for k in numerical_features if k in stats}
 
     # Create a DataFrame with the input features
     input_data = pd.DataFrame({
@@ -264,54 +255,43 @@ def project_game(home_team, away_team, year, week, scaler_features, weights_inpu
         'opponent': [away_team],
         'year': [year],
         'week': [week],
-        'passCompPercent': [stats['passCompPercent']],
-        'passingTDs': [stats['passingTDs']],
-        'rushingTDs': [stats['rushingTDs']],
-        'penaltyYards': [stats['penaltyYards']],
-        'fumblesLost': [stats['fumblesLost']],
-        'interceptions': [stats['interceptions']],
-        'fumblesRecovered': [stats['fumblesRecovered']],
-        'passesIntercepted': [stats['passesIntercepted']]
+        'is_home': [1],
+        'passCompPercent': [stats.get('passCompPercent', 0)],
+        'passingTDs': [stats.get('passingTDs', 0)],
+        'rushingTDs': [stats.get('rushingTDs', 0)],
+        'penaltyYards': [stats.get('penaltyYards', 0)],
+        'fumblesLost': [stats.get('fumblesLost', 0)],
+        'interceptions': [stats.get('interceptions', 0)],
+        'fumblesRecovered': [stats.get('fumblesRecovered', 0)],
+        'passesIntercepted': [stats.get('passesIntercepted', 0)],
+        'pointsPerGame': [stats.get('pointsPerGame', 0)],
+        'yardsPerGame': [stats.get('yardsPerGame', 0)]
     })
 
     # One-Hot Encode 'team' and 'opponent' columns
     input_encoded = pd.get_dummies(input_data, columns=['team', 'opponent'], drop_first=True)
 
     # Align the input_encoded DataFrame to the trained features_encoded
-    # This involves ensuring all columns are present, adding missing columns with 0
     input_encoded = input_encoded.reindex(columns=features_encoded.columns, fill_value=0)
 
-    # Standardize features
-    standardized_input = scaler_features.transform(input_encoded)
+    # Standardize numerical features
+    input_encoded[numerical_features] = scaler_features.transform(input_encoded[numerical_features])
 
-    # Forward propagation
-    hidden_layer1_input = np.dot(standardized_input, weights_input_hidden1)
-    hidden_layer1_output = sigmoid(hidden_layer1_input)
-
-    hidden_layer2_input = np.dot(hidden_layer1_output, weights_hidden1_hidden2)
-    hidden_layer2_output = sigmoid(hidden_layer2_input)
-
-    predicted_output = np.dot(hidden_layer2_output, weights_hidden2_output)
-    # For regression, using linear activation in the output layer is common.
-
-    # Since targets were scaled, inverse transform the predictions
-    predicted_output_unscaled = scaler_targets.inverse_transform(predicted_output)
+    # Make prediction
+    predicted_output = model.predict(input_encoded)
 
     # Extract projected scores
-    projected_home = predicted_output_unscaled[0][0]
-    projected_away = predicted_output_unscaled[0][1]
+    projected_home = predicted_output[0][0]
+    projected_away = predicted_output[0][1]
 
     return projected_home, projected_away
-
 
 def get_available_teams(features_encoded):
     team_columns = [col for col in features_encoded.columns if col.startswith('team_')]
     available_teams = sorted([col.replace('team_', '') for col in team_columns])
     return available_teams
 
-
 available_teams = get_available_teams(features_encoded)
-
 
 def get_user_input(available_teams, years):
     print("\n=== Project a Game Score ===")
@@ -359,31 +339,27 @@ def get_user_input(available_teams, years):
 
     return home_team, away_team, year, week
 
-
 def display_projected_score(home_team, away_team, projected_home, projected_away):
     print("\n=== Projected Game Score ===")
     print(f"{home_team} (Home) vs {away_team} (Away)")
     print(f"Projected Score:\n{home_team}: {projected_home:.2f}\n{away_team}: {projected_away:.2f}")
 
-
 def main_projection():
     home_team, away_team, year, week = get_user_input(available_teams, years)
     projected_home, projected_away = project_game(
         home_team, away_team, year, week,
-        scaler_features, weights_input_hidden1, weights_hidden1_hidden2, weights_hidden2_output,
-        scaler_targets, features_encoded, df_season_stats
+        scaler_features, model, features_encoded, df_season_stats
     )
     display_projected_score(home_team, away_team, projected_home, projected_away)
 
-
 # ----------------------- Execute Projection -----------------------
 while True:
-    user_input = input("Do you want another game prediction? (yes/no): ").strip().lower()
+    user_input = input("\nDo you want to project a game score? (yes/no): ").strip().lower()
 
-    if user_input == "no":
+    if user_input in ["no", "n"]:
         print("Thank you for using the game prediction tool. Goodbye!")
         break
-    elif user_input == "yes":
+    elif user_input in ["yes", "y"]:
         main_projection()
     else:
         print("Invalid input. Please enter 'yes' or 'no'.")
