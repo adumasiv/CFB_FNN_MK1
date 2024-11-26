@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import datetime  # For handling dates
 
 # For data fetching (ensure cfbd is installed and configured properly)
 from cfbd import Configuration, ApiClient, TeamsApi, GamesApi, StatsApi
@@ -33,9 +34,9 @@ stats_api = StatsApi(api_client)
 teams = [
     "Michigan", "Michigan State", "Ohio State", "Penn State", "Maryland",
     "Indiana", "Rutgers", "Northwestern", "UCLA", "Iowa", "Minnesota", "USC",
-    "Nebraska", "Purdue", "Washington", "Oregon", "Wisconsin", "Illinois"
+    "Nebraska", "Purdue", "Washington", "Oregon", "Wisconsin", "Illinois", "Eastern Michigan"
 ]
-years = [2024, 2023, 2022, 2021, 2020, 2019]  # Adjust years as needed
+years = [2024, 2023, 2022, 2021, 2020, 2019, 2018]  # Adjust years as needed
 
 # Fetch seasonal statistics for each team
 team_season_stats_list = []
@@ -89,31 +90,36 @@ for year in years:
             games = response
 
             for game in games:
-                # Skip games that haven't been played yet
-                if game.home_points is None or game.away_points is None:
+                # Determine if the game has been played
+                game_played = game.home_points is not None and game.away_points is not None
+
+                if game_played:
+                    if game.home_team == team:
+                        opponent = game.away_team
+                        points_for = game.home_points
+                        points_against = game.away_points
+                        is_home = 1
+                    else:
+                        opponent = game.home_team
+                        points_for = game.away_points
+                        points_against = game.home_points
+                        is_home = 0
+
+                    game_stats_dict = {
+                        'team': team,
+                        'opponent': opponent,
+                        'points_for': points_for,
+                        'points_against': points_against,
+                        'year': year,
+                        'week': game.week,
+                        'is_home': is_home
+                    }
+                    team_game_stats_list.append(game_stats_dict)
+                else:
+                    # For upcoming games without scores, you can choose to include them or not
+                    # Here, we'll skip them as they are not part of the training data
                     continue
 
-                if game.home_team == team:
-                    opponent = game.away_team
-                    points_for = game.home_points
-                    points_against = game.away_points
-                    is_home = 1
-                else:
-                    opponent = game.home_team
-                    points_for = game.away_points
-                    points_against = game.home_points
-                    is_home = 0
-
-                game_stats_dict = {
-                    'team': team,
-                    'opponent': opponent,
-                    'points_for': points_for,
-                    'points_against': points_against,
-                    'year': year,
-                    'week': game.week,
-                    'is_home': is_home
-                }
-                team_game_stats_list.append(game_stats_dict)
         except Exception as e:
             print(f"Error fetching data for {team} in {year}: {e}")
 
@@ -199,27 +205,27 @@ print(f"Test MAE: {mae}")
 print(f"R² Score: {r2}")
 
 # Plot training & validation loss values
-#plt.figure(figsize=(12, 4))
+# plt.figure(figsize=(12, 4))
 
 # Loss
-#plt.subplot(1, 2, 1)
-#plt.plot(history.history['loss'], label='Train')
-#plt.plot(history.history['val_loss'], label='Validation')
-#plt.title('Model Loss')
-#plt.xlabel('Epoch')
-#plt.ylabel('Loss (MSE)')
-#plt.legend()
+# plt.subplot(1, 2, 1)
+# plt.plot(history.history['loss'], label='Train')
+# plt.plot(history.history['val_loss'], label='Validation')
+# plt.title('Model Loss')
+# plt.xlabel('Epoch')
+# plt.ylabel('Loss (MSE)')
+# plt.legend()
 
 # MAE
-#plt.subplot(1, 2, 2)
-#plt.plot(history.history['mae'], label='Train')
-#plt.plot(history.history['val_mae'], label='Validation')
-#plt.title('Model MAE')
-#plt.xlabel('Epoch')
-#plt.ylabel('MAE')
-#plt.legend()
+# plt.subplot(1, 2, 2)
+# plt.plot(history.history['mae'], label='Train')
+# plt.plot(history.history['val_mae'], label='Validation')
+# plt.title('Model MAE')
+# plt.xlabel('Epoch')
+# plt.ylabel('MAE')
+# plt.legend()
 
-#plt.show()
+# plt.show()
 
 # ----------------------- Predictions vs Actual -----------------------
 
@@ -235,6 +241,7 @@ comparison_df = pd.DataFrame({
 
 print("\nPredictions vs Actual:")
 print(comparison_df.head(10))
+
 
 # ----------------------- Projection Functionality -----------------------
 
@@ -286,12 +293,15 @@ def project_game(home_team, away_team, year, week, scaler_features, model, featu
 
     return projected_home, projected_away
 
+
 def get_available_teams(features_encoded):
     team_columns = [col for col in features_encoded.columns if col.startswith('team_')]
     available_teams = sorted([col.replace('team_', '') for col in team_columns])
     return available_teams
 
+
 available_teams = get_available_teams(features_encoded)
+
 
 def get_user_input(available_teams, years):
     print("\n=== Project a Game Score ===")
@@ -339,10 +349,13 @@ def get_user_input(available_teams, years):
 
     return home_team, away_team, year, week
 
-def display_projected_score(home_team, away_team, projected_home, projected_away):
+
+def display_projected_score(home_team, away_team, projected_home, projected_away, prediction_date):
     print("\n=== Projected Game Score ===")
+    print(f"Date of Prediction: {prediction_date}")
     print(f"{home_team} (Home) vs {away_team} (Away)")
     print(f"Projected Score:\n{home_team}: {projected_home:.2f}\n{away_team}: {projected_away:.2f}")
+
 
 def main_projection():
     home_team, away_team, year, week = get_user_input(available_teams, years)
@@ -350,16 +363,107 @@ def main_projection():
         home_team, away_team, year, week,
         scaler_features, model, features_encoded, df_season_stats
     )
-    display_projected_score(home_team, away_team, projected_home, projected_away)
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    display_projected_score(home_team, away_team, projected_home, projected_away, current_date)
+
+
+# ----------------------- New Feature: Next Week's Matchups Prediction -----------------------
+
+def estimate_current_week(current_date, season_start_date=datetime.datetime(2024, 9, 1)):
+    """
+    Estimate the current week number based on the current date.
+    This is a simplistic approach and may need adjustment based on the actual season schedule.
+    """
+    delta_days = (current_date - season_start_date).days
+    estimated_week = delta_days // 7 + 1
+    if estimated_week < 1:
+        estimated_week = 1
+    elif estimated_week > 15:
+        estimated_week = 15
+    return estimated_week
+
+
+def fetch_next_week_matchups(api_client, teams, current_year, next_week):
+    """
+    Fetch all matchups for the next week involving the specified teams.
+    """
+    current_matchups = []
+    try:
+        # Fetch all games for the current year and next week
+        response = games_api.get_games(year=current_year, week=next_week, season_type='regular')
+        games = response
+
+        for game in games:
+            home_team = game.home_team
+            away_team = game.away_team
+
+            # Only consider matchups where both teams are in the specified teams list
+            if home_team in teams and away_team in teams:
+                matchup = {
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'year': current_year,
+                    'week': next_week
+                }
+                current_matchups.append(matchup)
+    except Exception as e:
+        print(f"Error fetching next week matchups: {e}")
+
+    return current_matchups
+
+
+def predict_next_week_matchups(model, scaler_features, features_encoded, df_season_stats, current_date, teams, years):
+    """
+    Predict scores for all next week matchups and display them with the current date.
+    """
+    # Estimate current week
+    today = datetime.datetime.now()
+    current_year = today.year
+    current_week = estimate_current_week(today)
+    next_week = current_week + 1
+    if next_week > 15:
+        next_week = 15  # Adjust based on maximum number of weeks in the season
+
+    print(f"\n=== Next Week's Matchups Prediction (Week {next_week}, {current_year}) ===")
+    print(f"Date of Prediction: {current_date}\n")
+
+    # Fetch next week matchups
+    next_week_matchups = fetch_next_week_matchups(api_client, teams, current_year, next_week)
+
+    if not next_week_matchups:
+        print("No matchups found for the next week involving the specified teams.")
+        return
+
+    # Iterate through each matchup and make predictions
+    for matchup in next_week_matchups:
+        home_team = matchup['home_team']
+        away_team = matchup['away_team']
+        year = matchup['year']
+        week = matchup['week']
+
+        projected_home, projected_away = project_game(
+            home_team, away_team, year, week,
+            scaler_features, model, features_encoded, df_season_stats
+        )
+
+        display_projected_score(home_team, away_team, projected_home, projected_away, current_date)
+
 
 # ----------------------- Execute Projection -----------------------
 while True:
-    user_input = input("\nDo you want to project a game score? (yes/no): ").strip().lower()
+    user_input = input(
+        "\nDo you want to (1) Project a custom game score or (2) Predict next week's matchups? (Enter 1 or 2, or 'quit' to exit): ").strip().lower()
 
-    if user_input in ["no", "n"]:
+    if user_input in ["quit", "q"]:
         print("Thank you for using the game prediction tool. Goodbye!")
         break
-    elif user_input in ["yes", "y"]:
+    elif user_input == "1":
         main_projection()
+    elif user_input == "2":
+        # Get current date in string format
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        predict_next_week_matchups(
+            model, scaler_features, features_encoded, df_season_stats, current_date, teams, years
+        )
     else:
-        print("Invalid input. Please enter 'yes' or 'no'.")
+        print("Invalid input. Please enter '1', '2', or 'quit'.")

@@ -73,7 +73,9 @@
       <workItem from="1730301485228" duration="11163000" />
       <workItem from="1731198417209" duration="3341000" />
       <workItem from="1731260219579" duration="11058000" />
-      <workItem from="1731965333922" duration="10260000" />
+      <workItem from="1731965333922" duration="12915000" />
+      <workItem from="1732290567637" duration="3433000" />
+      <workItem from="1732585286086" duration="4404000" />
     </task>
     <servers />
   </component>
@@ -81,6 +83,6 @@
     <option name="version" value="3" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/CFB_FNN_MK1$main.coverage" NAME="main Coverage Results" MODIFIED="1732021609903" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/CFB_FNN_MK1$main.coverage" NAME="main Coverage Results" MODIFIED="1732589127089" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
