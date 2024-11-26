@@ -370,10 +370,7 @@ def main_projection():
 # ----------------------- New Feature: Next Week's Matchups Prediction -----------------------
 
 def estimate_current_week(current_date, season_start_date=datetime.datetime(2024, 9, 1)):
-    """
-    Estimate the current week number based on the current date.
-    This is a simplistic approach and may need adjustment based on the actual season schedule.
-    """
+    
     delta_days = (current_date - season_start_date).days
     estimated_week = delta_days // 7 + 1
     if estimated_week < 1:
@@ -384,9 +381,7 @@ def estimate_current_week(current_date, season_start_date=datetime.datetime(2024
 
 
 def fetch_next_week_matchups(api_client, teams, current_year, next_week):
-    """
-    Fetch all matchups for the next week involving the specified teams.
-    """
+
     current_matchups = []
     try:
         # Fetch all games for the current year and next week
@@ -413,9 +408,7 @@ def fetch_next_week_matchups(api_client, teams, current_year, next_week):
 
 
 def predict_next_week_matchups(model, scaler_features, features_encoded, df_season_stats, current_date, teams, years):
-    """
-    Predict scores for all next week matchups and display them with the current date.
-    """
+
     # Estimate current week
     today = datetime.datetime.now()
     current_year = today.year
