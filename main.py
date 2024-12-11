@@ -1,10 +1,8 @@
 # ----------------------- Imports -----------------------
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import datetime  # For handling dates
+import datetime
 
-# For data fetching (ensure cfbd is installed and configured properly)
+# For data fetching
 from cfbd import Configuration, ApiClient, TeamsApi, GamesApi, StatsApi
 
 # For model building
@@ -36,7 +34,9 @@ teams = [
     "Indiana", "Rutgers", "Northwestern", "UCLA", "Iowa", "Minnesota", "USC",
     "Nebraska", "Purdue", "Washington", "Oregon", "Wisconsin", "Illinois", "Eastern Michigan"
 ]
-years = [2024, 2023, 2022, 2021, 2020, 2019, 2018]  # Adjust years as needed
+
+# Adjust years as needed
+years = [2024, 2023, 2022, 2021, 2020, 2019, 2018]
 
 # Fetch seasonal statistics for each team
 team_season_stats_list = []
@@ -116,8 +116,7 @@ for year in years:
                     }
                     team_game_stats_list.append(game_stats_dict)
                 else:
-                    # For upcoming games without scores, you can choose to include them or not
-                    # Here, we'll skip them as they are not part of the training data
+
                     continue
 
         except Exception as e:
@@ -203,29 +202,6 @@ r2 = r2_score(y_test, predictions)
 print(f"Test MSE: {mse}")
 print(f"Test MAE: {mae}")
 print(f"R² Score: {r2}")
-
-# Plot training & validation loss values
-# plt.figure(figsize=(12, 4))
-
-# Loss
-# plt.subplot(1, 2, 1)
-# plt.plot(history.history['loss'], label='Train')
-# plt.plot(history.history['val_loss'], label='Validation')
-# plt.title('Model Loss')
-# plt.xlabel('Epoch')
-# plt.ylabel('Loss (MSE)')
-# plt.legend()
-
-# MAE
-# plt.subplot(1, 2, 2)
-# plt.plot(history.history['mae'], label='Train')
-# plt.plot(history.history['val_mae'], label='Validation')
-# plt.title('Model MAE')
-# plt.xlabel('Epoch')
-# plt.ylabel('MAE')
-# plt.legend()
-
-# plt.show()
 
 # ----------------------- Predictions vs Actual -----------------------
 
@@ -370,7 +346,7 @@ def main_projection():
 # ----------------------- New Feature: Next Week's Matchups Prediction -----------------------
 
 def estimate_current_week(current_date, season_start_date=datetime.datetime(2024, 9, 1)):
-    
+
     delta_days = (current_date - season_start_date).days
     estimated_week = delta_days // 7 + 1
     if estimated_week < 1:
@@ -441,11 +417,89 @@ def predict_next_week_matchups(model, scaler_features, features_encoded, df_seas
 
         display_projected_score(home_team, away_team, projected_home, projected_away, current_date)
 
+def season_projection():
+    print("\n=== Project a Team's Season ===")
+    print("Available Teams:")
+    for team in available_teams:
+        print(f"- {team}")
+
+    # Input Team
+    while True:
+        chosen_team = input("\nEnter the Team: ").strip()
+        if chosen_team in available_teams:
+            break
+        else:
+            print("Invalid team name. Please choose from the available teams listed above.")
+
+    # Input Year
+    while True:
+        try:
+            year = int(input("Enter the Year (e.g., 2023): ").strip())
+            if year in years:
+                break
+            else:
+                print(f"Year not in the dataset. Available years: {years}")
+        except ValueError:
+            print("Please enter a valid year as an integer.")
+
+    schedule = games_api.get_games(year=year, team=chosen_team, season_type='regular')
+
+    # Initialize counters for wins, losses, and ties
+    wins = 0
+    losses = 0
+    ties = 0  # Optional: Include if ties are possible in your league
+
+    for game in schedule:
+        # Extract game details
+        home_team = game.home_team
+        away_team = game.away_team
+        game_year = game.season
+        week = game.week
+
+        # Predict game scores
+        projected_home, projected_away = project_game(
+            home_team, away_team, game_year, week,
+            scaler_features, model, features_encoded, df_season_stats
+        )
+
+        # Determine if the chosen team is home or away
+        if chosen_team == home_team:
+            team_score = projected_home
+            opponent_score = projected_away
+            opponent_team = away_team
+        elif chosen_team == away_team:
+            team_score = projected_away
+            opponent_score = projected_home
+            opponent_team = home_team
+        else:
+            # This should not occur if schedule is correctly fetched for the chosen team
+            print(f"Error: {chosen_team} is neither home nor away in week {week}.")
+            continue
+
+        # Determine the outcome
+        if team_score > opponent_score:
+            wins += 1
+            outcome = "W"
+        elif team_score < opponent_score:
+            losses += 1
+            outcome = "L"
+        else:
+            ties += 1  # Optional
+            outcome = "T"  # Optional
+
+        # Display each game's projected result
+        print(f"Week {week}: {chosen_team} vs {opponent_team} - {outcome}")
+
+    # Display the final season record
+    if ties > 0:
+        print(f"\nSeason Record for {chosen_team} ({year}): {wins}-{losses}-{ties}")
+    else:
+        print(f"\nSeason Record for {chosen_team} ({year}): {wins}-{losses}")
 
 # ----------------------- Execute Projection -----------------------
 while True:
     user_input = input(
-        "\nDo you want to (1) Project a custom game score or (2) Predict next week's matchups? (Enter 1 or 2, or 'quit' to exit): ").strip().lower()
+        "\nDo you want to (1) Project a custom game score or (2) Predict next week's matchups? or (3) Predict season win total (Enter 1, 2, 3, or 'quit' to exit): ").strip().lower()
 
     if user_input in ["quit", "q"]:
         print("Thank you for using the game prediction tool. Goodbye!")
@@ -458,5 +512,7 @@ while True:
         predict_next_week_matchups(
             model, scaler_features, features_encoded, df_season_stats, current_date, teams, years
         )
+    elif user_input == "3":
+        season_projection()
     else:
-        print("Invalid input. Please enter '1', '2', or 'quit'.")
+        print("Invalid input. Please enter '1', '2', '3', or 'quit'.")
